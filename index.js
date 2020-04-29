@@ -37,13 +37,14 @@ module.exports.handler = async (event) => {
 						key: object.Key,
 						size: object.Size,
 						metadata: objectMeta.Metadata,
+						expiration: objectMeta.Expiration,
 						contentType: objectMeta.ContentType,
 						lastModified: objectMeta.LastModified.toISOString(),
 						tags: objectTags.TagSet.map(({Key, Value}) => `${Key}=${Value}`),
 					};
 				}));
 
-				return contents.length > 0 ? contents.sort((a, b) => a.lastModified < b.lastModified ? -1 : a.lastModified > b.lastModified ? 1 : 0).reverse().map(({key, lastModified, size, metadata, contentType, tags}) => {
+				return contents.length > 0 ? contents.sort((a, b) => a.lastModified < b.lastModified ? -1 : a.lastModified > b.lastModified ? 1 : 0).reverse().map(({key, lastModified, size, metadata, contentType, tags, expiration}) => {
 					return `
 		<tr>
 			<td>${key}</td>
@@ -51,8 +52,9 @@ module.exports.handler = async (event) => {
 			<td>${size}</td>
 			<td>${contentType}</td>
 			<td>
-				<pre>${JSON.stringify(metadata)}</pre>
+				<pre>${JSON.stringify(metadata, undefined, 4)}</pre>
 			</td>
+			<td>${expiration}</td>
 			<td>${tags}</td>
 		</tr>
 					`;
