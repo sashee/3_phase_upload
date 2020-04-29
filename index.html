@@ -152,6 +152,43 @@
 		*[data-loggedin-show=true]{
 			display: none;
 		}
+		.s3bucket {
+			border-collapse: collapse;
+		}
+		.s3bucket tbody tr td:first-child {
+			max-width: 120px;
+			text-overflow: ellipsis;
+			overflow: hidden;
+		}
+		.s3bucket tbody tr td:nth-child(5) {
+			max-width: 250px;
+			overflow: scroll;
+		}
+		.s3bucket tbody tr td:nth-child(6) {
+			max-width: 250px;
+			overflow: scroll;
+		}
+		.s3bucket tbody td {
+			padding-right: 20px;
+			padding-left: 20px;
+			padding-top: 10px;
+			padding-bottom: 10px;
+		}
+		.s3bucket tbody tr:nth-child(even) {
+			background-color: #eeeeee;
+		}
+		.ddb-table {
+			border-collapse: collapse;
+		}
+		.ddb-table tbody td {
+			padding-right: 20px;
+			padding-left: 20px;
+			padding-top: 10px;
+			padding-bottom: 10px;
+		}
+		.ddb-table tbody tr:nth-child(even) {
+			background-color: #eeeeee;
+		}
 	</style>
 </head>
 <body>
@@ -188,7 +225,7 @@
 	</div>
 	<h1>Debugging</h1>
 	<h2>Bucket contents</h2>
-	<table>
+	<table class="s3bucket">
 		<thead>
 			<tr>
 				<th>Key</th>
@@ -203,7 +240,7 @@
 		</thead>
 	</table>
 	<h2>Database contents</h2>
-	<table>
+	<table class="ddb-table">
 		<thead>
 			<tr>
 				<th>Username</th>
