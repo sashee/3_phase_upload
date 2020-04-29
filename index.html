@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title></title>
+	<script>
+		const handleFileUpload = (selector, handler) => {
+			document.addEventListener("DOMContentLoaded", () => {
+				const element = document.querySelector(selector);
+				element.addEventListener("change", async (event) => {
+					const logElement = document.querySelector("#log");
+					const files = event.currentTarget.files;
+					if (files.length) {
+						try {
+							await handler(files[0]);
+						}catch (e) {
+							console.error(e);
+						}
+					}
+				})
+			})
+		}
+
+		const getUploadUrl = async () => {
+			const dataRes = await fetch("get_upload_url");
+			if (!dataRes.ok) {
+				throw dataRes;
+			}
+			return await dataRes.json();
+		}
+		const uploadFile = async (data, file) => {
+			const formData = new FormData();
+			formData.append("Content-Type", file.type);
+			Object.entries(data.fields).forEach(([k, v]) => {
+				formData.append(k, v);
+			});
+			formData.append("file", file); // must be the last one
+
+			const postRes = await fetch(data.url, {
+				method: "POST",
+				body: formData,
+			});
+
+			if (!postRes.ok) {
+				throw postRes;
+			}
+		};
+		const updateAvatar = async (data) => {
+			const {uploadToken, key} = data;
+
+			const updateAvatarRes = await fetch("update_avatar", {
+				method: "POST",
+				body: JSON.stringify({key, uploadToken}),
+			});
+
+			if (!updateAvatarRes.ok) {
+				throw updateAvatarRes;
+			}
+		}
+		handleFileUpload("#post", async (file) => {
+			const data = await getUploadUrl();
+			await uploadFile(data, file);
+			await updateAvatar(data);
+
+			location.reload();
+		});
+		handleFileUpload("#post-noupdate", async (file) => {
+			const data = await getUploadUrl();
+			await uploadFile(data, file);
+
+			location.reload();
+		});
+		document.addEventListener("DOMContentLoaded", async () => {
+			const [users, username] = await Promise.all([
+				(async () => {
+					const usersRes = await fetch("users");
+					if (!usersRes.ok) {
+						throw usersRes;
+					}
+					return await usersRes.json();
+				})(),
+				(async () => {
+					const whoamiRes = await fetch("whoami");
+					if (!whoamiRes.ok) {
+						throw whoamiRes;
+					}
+					return (await whoamiRes.json()).username;
+				})(),
+			])
+			document.querySelector("#users").innerHTML = "";
+			users.map(({Username, Name}) => {
+				const userElement = document.querySelector("#user-template").content.cloneNode(true);
+				if (username === Username) {
+					userElement.firstElementChild.classList.add("current-user");
+				}
+				userElement.querySelector("img").src = `user/${Username}/avatar`;
+				userElement.querySelector("h3").textContent = Name;
+				[...userElement.querySelectorAll(".username")].forEach((e) => e.textContent = Username);
+				userElement.querySelector("a").addEventListener("click", async (e) => {
+					const loginRes = await fetch("login", {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({username: Username})});
+					if (!loginRes.ok) {
+						throw loginRes;
+					}
+					location.reload();
+					e.preventDefault();
+				});
+
+				return userElement;
+			}).forEach((userElement) => document.querySelector("#users").appendChild(userElement));
+
+			if (username) {
+				[...document.querySelectorAll("*[data-loggedin-hide=true]")].forEach((e) => e.style.display = "none");
+				[...document.querySelectorAll("*[data-loggedin-show=true]")].forEach((e) => e.style.display = "block");
+				[...document.querySelectorAll("*[data-username-fill=true]")].forEach((e) => e.textContent = username);
+			}
+		});
+	</script>
+	<style>
+		.user-card {
+			display: inline-flex;
+			margin: 1rem;
+			border: 1px solid gray;
+			padding: 0.5rem;
+			position: relative;
+		}
+		.user-card img {
+			width: 100px;
+			height: 100px;
+			object-fit: contain;
+			margin-right: 1rem;
+		}
+		.user-card h3 {
+			margin-bottom: 0.2rem;
+			margin-top: 0;
+		}
+		.user-card .user-data {
+			display:flex;
+			flex-direction:column;
+			justify-content:space-between;
+		}
+		.user-card.current-user a {
+			display: none;
+		}
+		.user-card.current-user::before {
+			content: "Current user";
+			position: absolute;
+			left:0;
+			top:0;
+			background-color: rgba(144,238,144, 0.6);
+			padding: 5px;
+		}
+		*[data-loggedin-show=true]{
+			display: none;
+		}
+	</style>
+</head>
+<body>
+	<h2>How to use</h2>
+	<p>This demo website simulates users logging in and changing their avatars</p>
+	<p>There are 3 users, each with a distinct image</p>
+	<p>First, log in as a user using the link in their user card</p>
+	<p>After signing in, use the form below to upload a new avatar image</p>
+	<p>You can also inspect the S3 bucket contents and the DynamoDB table at the bottom of the page. You can see that changing the avatar image makes sure no leftover objects are left in the bucket</p>
+	<p>To see what happens if the browser does not send the thirds request (which sets the new Avatar in the DynamoDB table and deletes the old file), use the second file input. You can see that a new object is created in the bucket that has Status=Pending tag. S3 automatically cleans them up after at most 2 days. Come back later to observe this.</p>
+	<h2>Users</h2>
+	<div id="users">Loading users...</div>
+	<template id="user-template">
+		<div class="user-card">
+			<img src="">
+			<div class="user-data">
+				<div>
+					<h3></h3>
+					<small class="username"></small>
+				</div>
+				<a href="#">Sign in as <span class="username"/></a>
+			</div>
+		</div>
+	</template>
+	<h2>Update avatar</h2>
+	<p data-loggedin-hide="true">You are not logged in. Choose a user above and log in</p>
+	<div data-loggedin-show="true">
+		<p>Upload a new image for <span data-username-fill="true"/></p>
+		<p>It will reload the page</p>
+		<input id="post" type="file"/>
+		<hr/>
+		<p>Want to try out if the user does not send the 3rd request? Use this input:</p>
+		<input id="post-noupdate" type="file"/>
+	</div>
+	<h1>Debugging</h1>
+	<h2>Bucket contents</h2>
+	<table>
+		<thead>
+			<tr>
+				<th>Key</th>
+				<th>Last modified</th>
+				<th>Size</th>
+				<th>Content Type</th>
+				<th>Metadata</th>
+				<th>Tags</th>
+			</tr>
+			<tbody>$$BUCKET_CONTENTS$$</tbody>
+		</thead>
+	</table>
+	<h2>Database contents</h2>
+	<table>
+		<thead>
+			<tr>
+				<th>Username</th>
+				<th>Name</th>
+				<th>Avatar</th>
+			</tr>
+			<tbody>$$TABLE_CONTENTS$$</tbody>
+		</thead>
+	</table>
+</body>
+</html>
