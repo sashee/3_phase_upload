@@ -10,8 +10,6 @@ const dynamodb = new AWS.DynamoDB();
 
 const randomString = () =>	require("crypto").randomBytes(16).toString("hex");
 
-const getRandomFilename = randomString;
-
 const getSignedInUser = (event) => {
 	if (event.headers.Cookie) {
 		return event.headers.Cookie.split(";").map((cookie) => cookie.trim().split("=")).find(([name]) => name === "username")[1];
@@ -23,9 +21,8 @@ const getSignedInUser = (event) => {
 module.exports.handler = async (event) => {
 	const userAvatarPath = /\/user\/(?<username>[^/]*)\/avatar/;
 	if (event.path === "/") {
-		const html = await fs.readFile(__dirname+"/index.html", "utf8");
-
-		const [bucketTable, ddbTable] = await Promise.all([
+		const [html, bucketTable, ddbTable] = await Promise.all([
+			fs.readFile(__dirname+"/index.html", "utf8"),
 			(async () => {
 				// does not handle pagination, only for demonstration
 				const objects = await s3.listObjectsV2({Bucket: process.env.BUCKET}).promise();
@@ -44,21 +41,25 @@ module.exports.handler = async (event) => {
 					};
 				}));
 
-				return contents.length > 0 ? contents.sort((a, b) => a.lastModified < b.lastModified ? -1 : a.lastModified > b.lastModified ? 1 : 0).reverse().map(({key, lastModified, size, metadata, contentType, tags, expiration}) => {
-					return `
-		<tr>
-			<td>${key}</td>
-			<td>${lastModified}</td>
-			<td>${size}</td>
-			<td>${contentType}</td>
-			<td>
-				<pre>${JSON.stringify(metadata, undefined, 4)}</pre>
-			</td>
-			<td>${expiration}</td>
-			<td>${tags}</td>
-		</tr>
-					`;
-				}).join("") : "<tr><td colspan=\"5\">No files uploaded</td></tr>";
+				return contents
+					.sort((a, b) => a.lastModified < b.lastModified ? -1 : a.lastModified > b.lastModified ? 1 : 0)
+					.reverse()
+					.map(({key, lastModified, size, metadata, contentType, tags, expiration}) => {
+						return `
+	<tr>
+		<td>${key}</td>
+		<td>${lastModified}</td>
+		<td>${size}</td>
+		<td>${contentType}</td>
+		<td>
+			<pre>${JSON.stringify(metadata, undefined, 4)}</pre>
+		</td>
+		<td>${expiration}</td>
+		<td>${tags}</td>
+	</tr>
+						`;
+					})
+					.join("");
 
 			})(),
 			(async () => {
@@ -76,26 +77,28 @@ module.exports.handler = async (event) => {
 			})(),
 		]);
 
-		const withContents = html.replace("$$BUCKET_CONTENTS$$", bucketTable).replace("$$TABLE_CONTENTS$$", ddbTable);
+		const htmlWithDebug = html.replace("$$BUCKET_CONTENTS$$", bucketTable).replace("$$TABLE_CONTENTS$$", ddbTable);
 
 		return {
 			statusCode: 200,
 			headers: {
 				"Content-Type": "text/html",
 			},
-			body: withContents,
+			body: htmlWithDebug,
 		};
 	} else if (event.path === "/users") {
 		const items = await dynamodb.scan({
 			TableName: process.env.TABLE,
 		}).promise();
 
+		const result = items.Items.map(({Username: {S: Username}, Name: {S: Name}}) => ({Username, Name}));
+
 		return {
 			statusCode: 200,
 			headers: {
 				"Content-Type": "text/json",
 			},
-			body: JSON.stringify(items.Items.map(({Username: {S: Username}, Name: {S: Name}}) => ({Username, Name}))),
+			body: JSON.stringify(result),
 		};
 	} else if (event.httpMethod === "PUT" && event.path === "/login" && event.body) {
 		const username = JSON.parse(event.body).username;
@@ -141,7 +144,7 @@ module.exports.handler = async (event) => {
 	} else if (event.path === "/get_upload_url") {
 		const username = getSignedInUser(event);
 		const uploadToken = randomString();
-		const key = getRandomFilename();
+		const key = randomString();
 
 		const data = await util.promisify(s3.createPresignedPost.bind(s3))({
 			Bucket: process.env.BUCKET,
@@ -157,9 +160,11 @@ module.exports.handler = async (event) => {
 			]
 		});
 
+		// add the required fields
 		data.fields["x-amz-meta-username"] = username;
 		data.fields["x-amz-meta-upload-token"] = uploadToken;
 		data.fields["tagging"] = "<Tagging><TagSet><Tag><Key>Status</Key><Value>Pending</Value></Tag></TagSet></Tagging>";
+
 		data.uploadToken = uploadToken;
 		data.key = key;
 
@@ -173,14 +178,15 @@ module.exports.handler = async (event) => {
 	} else if (event.path === "/update_avatar" && event.httpMethod === "POST" && event.body) {
 		const {key, uploadToken} = JSON.parse(event.body);
 
-		const objectTags = await s3.getObjectTagging({Bucket: process.env.BUCKET, Key: key}).promise();
-		const objectMeta = await s3.headObject({Bucket: process.env.BUCKET, Key: key}).promise();
+		const [objectTags, objectMeta] = await Promise.all([
+			s3.getObjectTagging({Bucket: process.env.BUCKET, Key: key}).promise(),
+			s3.headObject({Bucket: process.env.BUCKET, Key: key}).promise(),
+		]);
 		if (objectTags.TagSet.some(({Key, Value}) => Key === "Status" && Value === "Pending") && objectMeta.Metadata["upload-token"] === uploadToken) {
 			const username = getSignedInUser(event);
 			const oldAvatar = (await dynamodb.getItem({TableName: process.env.TABLE, Key: {Username: {S: username}}}).promise()).Item.Avatar.S;
 
 			await s3.deleteObjectTagging({Bucket: process.env.BUCKET, Key: key}).promise();
-			await s3.deleteObject({Bucket: process.env.BUCKET, Key: oldAvatar}).promise();
 			await dynamodb.updateItem({
 				TableName: process.env.TABLE,
 				Key: {
@@ -195,6 +201,7 @@ module.exports.handler = async (event) => {
 				},
 				UpdateExpression: "SET Avatar = :newAvatar"
 			}).promise();
+			await s3.deleteObject({Bucket: process.env.BUCKET, Key: oldAvatar}).promise();
 			return {
 				statusCode: 200,
 			};
@@ -203,6 +210,5 @@ module.exports.handler = async (event) => {
 				statusCode: 400,
 			};
 		}
-
 	}
 };

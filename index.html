@@ -21,6 +21,7 @@
 			})
 		}
 
+		// step 1
 		const getUploadUrl = async () => {
 			const dataRes = await fetch("get_upload_url");
 			if (!dataRes.ok) {
@@ -28,6 +29,7 @@
 			}
 			return await dataRes.json();
 		}
+		// step 2
 		const uploadFile = async (data, file) => {
 			const formData = new FormData();
 			formData.append("Content-Type", file.type);
@@ -45,6 +47,7 @@
 				throw postRes;
 			}
 		};
+		// step 3
 		const updateAvatar = async (data) => {
 			const {uploadToken, key} = data;
 
@@ -58,19 +61,22 @@
 			}
 		}
 		handleFileUpload("#post", async (file) => {
-			const data = await getUploadUrl();
-			await uploadFile(data, file);
-			await updateAvatar(data);
+			const data = await getUploadUrl(); // 1
+			await uploadFile(data, file); // 2
+			await updateAvatar(data); // 3
 
 			location.reload();
 		});
 		handleFileUpload("#post-noupdate", async (file) => {
-			const data = await getUploadUrl();
-			await uploadFile(data, file);
+			const data = await getUploadUrl(); // 1
+			await uploadFile(data, file); // 2
+
+			// step 3 is missing
 
 			location.reload();
 		});
 		document.addEventListener("DOMContentLoaded", async () => {
+			// update users and the currently signed in user
 			const [users, username] = await Promise.all([
 				(async () => {
 					const usersRes = await fetch("users");
@@ -87,6 +93,7 @@
 					return (await whoamiRes.json()).username;
 				})(),
 			])
+			// users table
 			document.querySelector("#users").innerHTML = "";
 			users.map(({Username, Name}) => {
 				const userElement = document.querySelector("#user-template").content.cloneNode(true);
@@ -109,6 +116,7 @@
 			}).forEach((userElement) => document.querySelector("#users").appendChild(userElement));
 
 			if (username) {
+				// update the DOM that the user is signed in
 				[...document.querySelectorAll("*[data-loggedin-hide=true]")].forEach((e) => e.style.display = "none");
 				[...document.querySelectorAll("*[data-loggedin-show=true]")].forEach((e) => e.style.display = "block");
 				[...document.querySelectorAll("*[data-username-fill=true]")].forEach((e) => e.textContent = username);
@@ -198,7 +206,7 @@
 	<p>First, log in as a user using the link in their user card</p>
 	<p>After signing in, use the form below to upload a new avatar image</p>
 	<p>You can also inspect the S3 bucket contents and the DynamoDB table at the bottom of the page. You can see that changing the avatar image makes sure no leftover objects are left in the bucket</p>
-	<p>To see what happens if the browser does not send the thirds request (which sets the new Avatar in the DynamoDB table and deletes the old file), use the second file input. You can see that a new object is created in the bucket that has Status=Pending tag. S3 automatically cleans them up after at most 2 days. Come back later to observe this.</p>
+	<p>To see what happens if the browser does not send the thirds request (which sets the new Avatar in the DynamoDB table and deletes the old file), use the second file input. You can see that a new object is created in the bucket that has Status=Pending tag. With a lifecycle config, S3 automatically cleans them up usually within 2-3 days. Come back later to observe this.</p>
 	<h2>Users</h2>
 	<div id="users">Loading users...</div>
 	<template id="user-template">
@@ -217,10 +225,11 @@
 	<p data-loggedin-hide="true">You are not logged in. Choose a user above and log in</p>
 	<div data-loggedin-show="true">
 		<p>Upload a new image for <span data-username-fill="true"/></p>
-		<p>It will reload the page</p>
+		<p>It will reload the page when it finishes</p>
 		<input id="post" type="file"/>
 		<hr/>
-		<p>Want to try out if the user does not send the 3rd request? Use this input:</p>
+		<p>Want to try out what happens if the user does not send the 3rd request? Use this input:</p>
+		<p>It will reload the page when it finishes</p>
 		<input id="post-noupdate" type="file"/>
 	</div>
 	<h1>Debugging</h1>
