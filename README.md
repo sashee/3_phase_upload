@@ -12,11 +12,14 @@ When a user uploads a new image, it uses a 3-phase fetch:
 
 ### Security
 
-An ```upload-token``` value is generated when the browser requests a presigned POST URL and that is added to the object. When the browser sends the third fetch, it must present this value and this proves that the upload was done by the same user.
+The uploaded object key is randomly generated on the backend without any influence from the client. When the browser sends the third fetch, it sends back this
+key both as a proof that it knows and also to help the backend identify the file.
 
-A Status=Pending object tag is also added to the uploaded object and a bucket lifecycle rule makes sure it is cleaned after a few days. When the database is updated this tag is removed.
+When an object is uploaded by the client, it is put into the ```pending/``` directory inside the bucket. There is a lifecycle rule that makes sure objects
+in this directory are cleaned after a few days. When the database is updated and the uploaded file is in use the backend moves the object out of this directory.
 
 If a user accidentally or deliberately does not send the third request, the old image will be used and the uploaded file will be deleted automatically.
+Also, if the user uploads the file again as the POST URL is still valid, it will be cleaned up.
 
 ## How to deploy
 
@@ -68,20 +71,12 @@ Under the hood, the 3 fetches can be observed in the devtools:
 
 If any of the 2 fetches are producing an error then nothing permanent happens. The backend does not keep track of presigned URLs and if the upload was unsuccessful then an object won't be stored in the S3 bucket. But what happens if the third fetch is missing, either accidentally (the browser crashed) or deliberately?
 
-When the image is uploaded, it gets the Status=Pending tag and a bucket lifecycle rule cleans it up after a few days. To observe how it works, use the second file input which skips the third fetch.
+When the image is uploaded, it is put into the ```pending/``` directory and a bucket lifecycle rule cleans it up after a few days. To observe how it works, use the second file input which skips the third fetch.
 
 When using that input, observe that the avatar is not changed and there is a new object stored in the bucket:
 
 ![](docs/pending_object.png)
 
-Notice that it has the Status=Pending tag and there is an expiration time. S3 will automatically delete this object.
-
-On the S3 console, a lifecycle rule looks like this:
-
-![](docs/lifecycle_rule.png)
-
-And the expiring object:
-
-![](docs/s3_console.png)
+Notice that it has an expiration time. S3 will automatically delete this object.
 
 The user data is generated with [Faker.js](https://github.com/marak/Faker.js/). The initial avatar images are from [https://thispersondoesnotexist.com/](https://thispersondoesnotexist.com/). The cat image is from [https://thecatapi.com/](https://thecatapi.com/).

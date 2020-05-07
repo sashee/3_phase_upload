@@ -28,7 +28,6 @@ module.exports.handler = async (event) => {
 				const objects = await s3.listObjectsV2({Bucket: process.env.BUCKET}).promise();
 				const contents = await Promise.all(objects.Contents.map(async (object) => {
 					const objectMeta = await s3.headObject({Bucket: process.env.BUCKET, Key: object.Key}).promise();
-					const objectTags = await s3.getObjectTagging({Bucket: process.env.BUCKET, Key: object.Key}).promise();
 
 					return {
 						key: object.Key,
@@ -37,14 +36,13 @@ module.exports.handler = async (event) => {
 						expiration: objectMeta.Expiration,
 						contentType: objectMeta.ContentType,
 						lastModified: objectMeta.LastModified.toISOString(),
-						tags: objectTags.TagSet.map(({Key, Value}) => `${Key}=${Value}`),
 					};
 				}));
 
 				return contents
 					.sort((a, b) => a.lastModified < b.lastModified ? -1 : a.lastModified > b.lastModified ? 1 : 0)
 					.reverse()
-					.map(({key, lastModified, size, metadata, contentType, tags, expiration}) => {
+					.map(({key, lastModified, size, metadata, contentType, expiration}) => {
 						return `
 	<tr>
 		<td>${key}</td>
@@ -55,7 +53,6 @@ module.exports.handler = async (event) => {
 			<pre>${JSON.stringify(metadata, undefined, 4)}</pre>
 		</td>
 		<td>${expiration}</td>
-		<td>${tags}</td>
 	</tr>
 						`;
 					})
@@ -143,29 +140,23 @@ module.exports.handler = async (event) => {
 		};
 	} else if (event.path === "/get_upload_url") {
 		const username = getSignedInUser(event);
-		const uploadToken = randomString();
 		const key = randomString();
 
 		const data = await util.promisify(s3.createPresignedPost.bind(s3))({
 			Bucket: process.env.BUCKET,
 			Fields: {
-				key,
+				key: `pending/${key}`,
 			},
 			Conditions: [
 				["content-length-range", 	0, 1000000], // content length restrictions: 0-1MB
 				["starts-with", "$Content-Type", "image/"], // content type restriction
 				["eq", "$x-amz-meta-username", username],
-				["eq", "$x-amz-meta-upload-token", uploadToken],
-				["eq", "$tagging", "<Tagging><TagSet><Tag><Key>Status</Key><Value>Pending</Value></Tag></TagSet></Tagging>"],
 			]
 		});
 
 		// add the required fields
 		data.fields["x-amz-meta-username"] = username;
-		data.fields["x-amz-meta-upload-token"] = uploadToken;
-		data.fields["tagging"] = "<Tagging><TagSet><Tag><Key>Status</Key><Value>Pending</Value></Tag></TagSet></Tagging>";
 
-		data.uploadToken = uploadToken;
 		data.key = key;
 
 		return {
@@ -176,39 +167,38 @@ module.exports.handler = async (event) => {
 			body: JSON.stringify(data),
 		};
 	} else if (event.path === "/update_avatar" && event.httpMethod === "POST" && event.body) {
-		const {key, uploadToken} = JSON.parse(event.body);
+		const {key} = JSON.parse(event.body);
 
-		const [objectTags, objectMeta] = await Promise.all([
-			s3.getObjectTagging({Bucket: process.env.BUCKET, Key: key}).promise(),
-			s3.headObject({Bucket: process.env.BUCKET, Key: key}).promise(),
-		]);
-		if (objectTags.TagSet.some(({Key, Value}) => Key === "Status" && Value === "Pending") && objectMeta.Metadata["upload-token"] === uploadToken) {
-			const username = getSignedInUser(event);
-			const oldAvatar = (await dynamodb.getItem({TableName: process.env.TABLE, Key: {Username: {S: username}}}).promise()).Item.Avatar.S;
+		// move object out of the pending directory
+		await s3.copyObject({
+			Bucket: process.env.BUCKET,
+			Key: key,
+			CopySource: encodeURI(`${process.env.BUCKET}/pending/${key}`),
+		}).promise();
+		await s3.deleteObject({Bucket: process.env.BUCKET, Key: `pending/${key}`}).promise();
 
-			await s3.deleteObjectTagging({Bucket: process.env.BUCKET, Key: key}).promise();
-			await dynamodb.updateItem({
-				TableName: process.env.TABLE,
-				Key: {
-					Username: {
-						S: username,
-					},
+		// set the avatar
+		const username = getSignedInUser(event);
+
+		const oldAvatar = (await dynamodb.getItem({TableName: process.env.TABLE, Key: {Username: {S: username}}}).promise()).Item.Avatar.S;
+
+		await dynamodb.updateItem({
+			TableName: process.env.TABLE,
+			Key: {
+				Username: {
+					S: username,
 				},
-				ConditionExpression: "Avatar = :oldAvatar",
-				ExpressionAttributeValues: {
-					":oldAvatar": {S: oldAvatar},
-					":newAvatar": {S: key},
-				},
-				UpdateExpression: "SET Avatar = :newAvatar"
-			}).promise();
-			await s3.deleteObject({Bucket: process.env.BUCKET, Key: oldAvatar}).promise();
-			return {
-				statusCode: 200,
-			};
-		}else {
-			return {
-				statusCode: 400,
-			};
-		}
+			},
+			ConditionExpression: "Avatar = :oldAvatar",
+			ExpressionAttributeValues: {
+				":oldAvatar": {S: oldAvatar},
+				":newAvatar": {S: key},
+			},
+			UpdateExpression: "SET Avatar = :newAvatar"
+		}).promise();
+		await s3.deleteObject({Bucket: process.env.BUCKET, Key: oldAvatar}).promise();
+		return {
+			statusCode: 200,
+		};
 	}
 };

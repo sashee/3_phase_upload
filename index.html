@@ -75,6 +75,16 @@
 
 			location.reload();
 		});
+		handleFileUpload("#post-doubleupload", async (file) => {
+			const data = await getUploadUrl(); // 1
+			await uploadFile(data, file); // 2
+			await updateAvatar(data); // 3
+
+			// upload again
+			await uploadFile(data, file); // 2
+
+			location.reload();
+		});
 		document.addEventListener("DOMContentLoaded", async () => {
 			// update users and the currently signed in user
 			const [users, username] = await Promise.all([
@@ -231,6 +241,10 @@
 		<p>Want to try out what happens if the user does not send the 3rd request? Use this input:</p>
 		<p>It will reload the page when it finishes</p>
 		<input id="post-noupdate" type="file"/>
+		<hr/>
+		<p>Feeling extra evil? Try what happens if the user uploads the file again after the backend processed the old one</p>
+		<p>It will reload the page when it finishes</p>
+		<input id="post-doubleupload" type="file"/>
 	</div>
 	<h1>Debugging</h1>
 	<h2>Bucket contents</h2>
@@ -243,7 +257,6 @@
 				<th>Content Type</th>
 				<th>Metadata</th>
 				<th>Expiration</th>
-				<th>Tags</th>
 			</tr>
 			<tbody>$$BUCKET_CONTENTS$$</tbody>
 		</thead>

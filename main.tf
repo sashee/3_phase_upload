@@ -8,14 +8,12 @@ resource "aws_s3_bucket" "bucket" {
   cors_rule {
     allowed_methods = ["POST"]
     allowed_origins = ["*"]
-		allowed_headers = ["*"]
+    allowed_headers = ["*"]
   }
-	lifecycle_rule {
+  lifecycle_rule {
     enabled = true
 
-    tags = {
-      "Status"      = "Pending"
-    }
+    prefix = "pending/"
 
     expiration {
       days = 1
@@ -30,17 +28,17 @@ resource "aws_s3_bucket_object" "object" {
   source = "${path.module}/${each.value}"
   bucket = aws_s3_bucket.bucket.bucket
   etag   = filemd5("${path.module}/${each.value}")
-	lifecycle {
-		ignore_changes = all
-	}
+  lifecycle {
+    ignore_changes = all
+  }
 }
 
 # DDB
 
 resource "aws_dynamodb_table" "users-table" {
-  name           = "users-${random_id.id.hex}"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "Username"
+  name         = "users-${random_id.id.hex}"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "Username"
 
   attribute {
     name = "Username"
@@ -49,31 +47,31 @@ resource "aws_dynamodb_table" "users-table" {
 }
 
 locals {
-	sample_users = [
-		<<ITEM
+  sample_users = [
+    <<ITEM
 		{
 			"Username": {"S": "Polly.Mayert21"},
 			"Name": {"S": "Polly Mayert"},
 			"Avatar": {"S": "polly.jpg"}
 		}
 		ITEM
-		,
-		<<ITEM
+    ,
+    <<ITEM
 		{
 			"Username": {"S": "Cooper12"},
 			"Name": {"S": "Cooper Bergstrom"},
 			"Avatar": {"S": "cooper.jpg"}
 		}
 		ITEM
-		,
-		<<ITEM
+    ,
+    <<ITEM
 		{
 			"Username": {"S": "Elbert44"},
 			"Name": {"S": "Elbert Legros"},
 			"Avatar": {"S": "elbert.jpg"}
 		}
 		ITEM
-	]
+  ]
 }
 resource "aws_dynamodb_table_item" "users" {
   for_each = toset(local.sample_users)
@@ -82,9 +80,9 @@ resource "aws_dynamodb_table_item" "users" {
   hash_key   = aws_dynamodb_table.users-table.hash_key
 
   item = each.value
-	lifecycle {
-		ignore_changes = all
-	}
+  lifecycle {
+    ignore_changes = all
+  }
 }
 
 # Lambda function
@@ -97,7 +95,7 @@ data "archive_file" "lambda_zip" {
   type        = "zip"
   output_path = "/tmp/${random_id.id.hex}-lambda.zip"
   source {
-		content = file("index.js")
+    content  = file("index.js")
     filename = "index.js"
   }
   source {
@@ -118,7 +116,7 @@ resource "aws_lambda_function" "signer_lambda" {
   environment {
     variables = {
       BUCKET = aws_s3_bucket.bucket.bucket
-      TABLE = aws_dynamodb_table.users-table.id
+      TABLE  = aws_dynamodb_table.users-table.id
     }
   }
 }
@@ -129,7 +127,6 @@ data "aws_iam_policy_document" "lambda_exec_role_policy" {
       "s3:PutObject",
       "s3:GetObject",
       "s3:DeleteObject",
-      "s3:GetObjectTagging",
     ]
     resources = [
       "${aws_s3_bucket.bucket.arn}/*",
@@ -137,39 +134,13 @@ data "aws_iam_policy_document" "lambda_exec_role_policy" {
   }
   statement {
     actions = [
-      "s3:PutObjectTagging",
+      "dynamodb:Scan",
+      "dynamodb:PutItem",
+      "dynamodb:GetItem",
+      "dynamodb:UpdateItem",
     ]
     resources = [
-      "${aws_s3_bucket.bucket.arn}/*",
-    ]
-		condition {
-			test = "StringEquals"
-			variable = "s3:RequestObjectTag/Status"
-			values = ["Pending"]
-		}
-  }
-  statement {
-    actions = [
-      "s3:DeleteObjectTagging",
-    ]
-    resources = [
-      "${aws_s3_bucket.bucket.arn}/*",
-    ]
-		condition {
-			test = "StringEquals"
-			variable = "s3:ExistingObjectTag/Status"
-			values = ["Pending"]
-		}
-  }
-  statement {
-    actions = [
-			"dynamodb:Scan",
-			"dynamodb:PutItem",
-			"dynamodb:GetItem",
-			"dynamodb:UpdateItem",
-    ]
-    resources = [
-			aws_dynamodb_table.users-table.arn,
+      aws_dynamodb_table.users-table.arn,
     ]
   }
   statement {
