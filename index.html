@@ -49,11 +49,11 @@
 		};
 		// step 3
 		const updateAvatar = async (data) => {
-			const {uploadToken, key} = data;
+			const {key} = data;
 
 			const updateAvatarRes = await fetch("update_avatar", {
 				method: "POST",
-				body: JSON.stringify({key, uploadToken}),
+				body: JSON.stringify({key}),
 			});
 
 			if (!updateAvatarRes.ok) {
