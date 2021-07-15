@@ -8,14 +8,14 @@
 			document.addEventListener("DOMContentLoaded", () => {
 				const element = document.querySelector(selector);
 				element.addEventListener("change", async (event) => {
-					const logElement = document.querySelector("#log");
-					const files = event.currentTarget.files;
-					if (files.length) {
-						try {
+					try {
+						const logElement = document.querySelector("#log");
+						const files = event.currentTarget.files;
+						if (files.length) {
 							await handler(files[0]);
-						}catch (e) {
-							console.error(e);
 						}
+					}catch (e) {
+						console.error(e);
 					}
 				})
 			})

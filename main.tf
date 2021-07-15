@@ -257,3 +257,7 @@ resource "aws_lambda_permission" "apigw" {
 output "url" {
   value = "${aws_api_gateway_deployment.deployment.invoke_url}/"
 }
+
+output "function" {
+  value = aws_lambda_function.signer_lambda.arn
+}

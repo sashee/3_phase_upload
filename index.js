@@ -169,18 +169,25 @@ module.exports.handler = async (event) => {
 	} else if (event.path === "/update_avatar" && event.httpMethod === "POST" && event.body) {
 		const {key} = JSON.parse(event.body);
 
-		// move object out of the pending directory
-		await s3.copyObject({
-			Bucket: process.env.BUCKET,
-			Key: key,
-			CopySource: encodeURI(`${process.env.BUCKET}/pending/${key}`),
-		}).promise();
-		await s3.deleteObject({Bucket: process.env.BUCKET, Key: `pending/${key}`}).promise();
-
-		// set the avatar
 		const username = getSignedInUser(event);
 
-		const oldAvatar = (await dynamodb.getItem({TableName: process.env.TABLE, Key: {Username: {S: username}}}).promise()).Item.Avatar.S;
+		// move object out of the pending directory
+		const moveObject = async () => {
+			await s3.copyObject({
+				Bucket: process.env.BUCKET,
+				Key: key,
+				CopySource: encodeURI(`${process.env.BUCKET}/pending/${key}`),
+			}).promise();
+			await s3.deleteObject({Bucket: process.env.BUCKET, Key: `pending/${key}`}).promise();
+		};
+
+		const getCurrentAvatar = async () => {
+			return (await dynamodb.getItem({TableName: process.env.TABLE, Key: {Username: {S: username}}}).promise()).Item.Avatar.S;
+		};
+
+		const [, oldAvatar] = await Promise.all([moveObject(), getCurrentAvatar()]);
+
+		// set the avatar
 
 		await dynamodb.updateItem({
 			TableName: process.env.TABLE,
